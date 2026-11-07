@@ -84,6 +84,17 @@ npm run preview
 
 ### 保存
 
+**写真にまとめて保存**：分割画像を準備し、次の画面の「写真に保存・共有」を押します。iPhoneなど対応端末では共有画面の「画像を保存」を選ぶことで、複数画像を写真アプリへまとめて保存できます。共有先・保存項目は端末やブラウザによって異なります。Webアプリが写真ライブラリへ直接書き込む方式ではありません。
+
+- 画像の準備と共有ボタンを分け、処理に時間がかかってもタップを起点に共有画面を開けるようにしています。
+- 画像はZIPにせず、プレビューの順に連番ファイルとして一括で渡します。
+- 写真用はPNGまたはJPEG。WebP選択時は写真用にPNGを用意し、ZIP・個別保存には選択中の形式を使います。
+- 共有用画像の合計は64MiBまでです。大きすぎる場合や複数ファイル共有に非対応の場合は、枚数・解像度を下げるかZIP・個別保存を利用してください。
+- 共有をキャンセルしても再試行できます。完了表示は共有画面の処理完了を示し、写真アプリへの保存完了を保証するものではありません。
+- iPhoneの写真アプリでの最終保存は実機未検証です。Web Share APIは自動テストで置き換え、渡す画像の内容・順序とキャンセル・エラー処理を検証しています。
+
+[WebKitのユーザー操作と共有APIの仕様](https://webkit.org/blog/13862/the-user-activation-api/)を参考にしています。
+
 PNG / JPEG / WebPに対応。JPEG・WebPは品質10〜100%、初期値94%です。
 
 - 個別保存：`元画像名_01.png` のような連番。
@@ -179,8 +190,8 @@ dist/                      本番ビルド（再生成可能）
 `docs/` は生成物ですがPages配信のためGit管理対象です。`.nojekyll` とローカルアイコンも含みます。独自の自動公開GitHub Actionsワークフローは同梱していません。Pages自身のビルド・デプロイ処理はGitHubが管理します。
 
 リポジトリ名や公開パスを変更する場合は `scripts/build-pages.mjs` のベースパスとREADMEのURLを変更してください。通常のローカルビルドは引き続き `npm run build` で `dist/` に出力されます。
+
 ## 実装時に参照した仕様
 
 - [Vite PWA：Reactでの更新通知](https://vite-pwa-org.netlify.app/frameworks/react)
 - [MDN：createImageBitmapと画像の向き](https://developer.mozilla.org/en-US/docs/Web/API/Window/createImageBitmap)
-

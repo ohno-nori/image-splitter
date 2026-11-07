@@ -32,7 +32,12 @@ import {
   type Settings,
 } from "./lib/model";
 import { loadImage, type LoadedImage } from "./lib/image";
-import { download, exportImages } from "./lib/export";
+import {
+  canShareFiles,
+  download,
+  exportImages,
+  exportPhotos,
+} from "./lib/export";
 import { Editor } from "./components/Editor";
 import { Dialog } from "./components/Dialog";
 
@@ -94,13 +99,21 @@ export default function App() {
     [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(""),
     [error, setError] = useState("");
-  const [modal, setModal] = useState<"settings" | "tiles" | "expand" | null>(
-      null,
-    ),
+  const [modal, setModal] = useState<
+      "settings" | "tiles" | "expand" | "photos" | null
+    >(null),
     [index, setIndex] = useState(0),
     [dragging, setDragging] = useState(false),
     [saved, setSaved] = useState<File | null>(null),
     [notice, setNotice] = useState("");
+  const [photos, setPhotos] = useState<File[] | null>(null);
+  const [photoMessage, setPhotoMessage] = useState("");
+  const [photoError, setPhotoError] = useState("");
+  useEffect(() => {
+    setPhotos(null);
+    setPhotoMessage("");
+    setPhotoError("");
+  }, [source, settings, placement]);
   const input = useRef<HTMLInputElement>(null),
     generation = useRef(0),
     active = useRef<LoadedImage | null>(null),
@@ -190,6 +203,7 @@ export default function App() {
     setBusy(true);
     setError("");
     setSaved(null);
+    setPhotos(null);
     setProgress("書き出しを準備しています…");
     try {
       const file = await exportImages(
@@ -220,6 +234,71 @@ export default function App() {
     } catch (e) {
       if ((e as Error).name !== "AbortError")
         setError("共有できませんでした。「もう一度保存」をお試しください。");
+    }
+  }
+  async function preparePhotos() {
+    if (!source || !plan || locked.current) return;
+    setModal("photos");
+    setPhotoError("");
+    setPhotoMessage("");
+    setSaved(null);
+    if (photos) return;
+    locked.current = true;
+    setBusy(true);
+    setProgress("画像を準備しています…");
+    try {
+      const files = await exportPhotos(
+        source,
+        plan,
+        settings,
+        placement,
+        setProgress,
+      );
+      if (!canShareFiles(files))
+        throw new Error(
+          "この端末・ブラウザでは、これらの画像をまとめて共有できません。枚数を減らすか、ZIP・個別保存をお使いください。",
+        );
+      setPhotos(files);
+    } catch (e) {
+      setPhotoError(
+        e instanceof Error
+          ? e.message
+          : "画像を準備できませんでした。解像度を下げて再試行してください。",
+      );
+    } finally {
+      locked.current = false;
+      setBusy(false);
+      setProgress("");
+    }
+  }
+  async function sharePhotos() {
+    if (!photos || locked.current) return;
+    setPhotoError("");
+    setPhotoMessage("");
+    if (!canShareFiles(photos)) {
+      setPhotoError(
+        "この画像をまとめて共有できません。ZIP・個別保存をお使いください。",
+      );
+      return;
+    }
+    locked.current = true;
+    setBusy(true);
+    setProgress("共有画面を開いています…");
+    try {
+      // Invoke directly in the button handler: no encoding awaits before share().
+      await navigator.share({ files: photos });
+      setPhotoMessage("共有画面の操作が完了しました。");
+    } catch (e) {
+      if ((e as Error).name === "AbortError")
+        setPhotoMessage("共有をキャンセルしました。もう一度開けます。");
+      else
+        setPhotoError(
+          "共有画面を開けませんでした。もう一度押すか、ZIP・個別保存をお試しください。",
+        );
+    } finally {
+      locked.current = false;
+      setBusy(false);
+      setProgress("");
     }
   }
   const tile = plan?.tiles[Math.min(index, plan.tiles.length - 1)];
@@ -783,6 +862,14 @@ export default function App() {
             </fieldset>
             <div className="save-actions">
               <button
+                className="primary-button"
+                disabled={!plan || busy || loading}
+                onClick={() => void preparePhotos()}
+              >
+                <Share2 size={19} />
+                写真にまとめて保存
+              </button>
+              <button
                 className="secondary-button"
                 disabled={!plan || busy || loading}
                 onClick={() => setModal("tiles")}
@@ -792,7 +879,7 @@ export default function App() {
                 <ChevronRight size={16} />
               </button>
               <button
-                className="primary-button"
+                className="secondary-button"
                 disabled={!plan || busy || loading}
                 onClick={() => void save(null)}
               >
@@ -846,6 +933,85 @@ export default function App() {
           </span>
         </footer>
       </main>
+      {modal === "photos" && (
+        <Dialog
+          title="写真にまとめて保存"
+          locked={busy}
+          onClose={() => {
+            setModal(null);
+            setPhotos(null);
+          }}
+        >
+          <p>
+            共有画面で「画像を保存」を選ぶと、写真アプリへまとめて保存できます。表示される項目や保存先は端末によって異なります。
+          </p>
+          {settings.format === "webp" && (
+            <p className="inline-note">
+              写真用にはPNGで用意します。ZIP・個別保存は選択中のWebP形式です。
+            </p>
+          )}
+          {busy ? (
+            <p className="inline-note" role="status">
+              {progress}
+            </p>
+          ) : photos ? (
+            <>
+              <p className="inline-note">
+                {photos.length}枚の画像を用意しました（
+                {(
+                  photos.reduce((sum, f) => sum + f.size, 0) /
+                  1024 /
+                  1024
+                ).toFixed(1)}
+                MB）。
+              </p>
+              <button
+                className="primary-button"
+                onClick={() => void sharePhotos()}
+              >
+                <Share2 size={18} />
+                写真に保存・共有
+              </button>
+            </>
+          ) : !photoError ? (
+            <button
+              className="primary-button"
+              onClick={() => void preparePhotos()}
+            >
+              画像を準備する
+            </button>
+          ) : null}
+          {photoError && (
+            <>
+              <p className="inline-error" role="alert">
+                {photoError}
+              </p>
+              <button
+                className="secondary-button"
+                disabled={busy}
+                onClick={() => void preparePhotos()}
+              >
+                もう一度準備する
+              </button>
+            </>
+          )}
+          {photoMessage && (
+            <p className="inline-note" role="status">
+              {photoMessage}
+            </p>
+          )}
+          <button
+            className="secondary-button"
+            disabled={busy || !plan}
+            onClick={() => {
+              setModal(null);
+              void save(null);
+            }}
+          >
+            ZIPで保存する
+          </button>
+        </Dialog>
+      )}
       {modal === "settings" && (
         <Dialog title="アプリ設定" onClose={() => setModal(null)}>
           <label className="field-title" htmlFor="theme">
